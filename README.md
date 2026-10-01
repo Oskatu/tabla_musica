@@ -108,17 +108,31 @@ src/
 - Cada pista es **una sola voz** en la partitura: si dos notas se solapan, la primera se acorta al
   inicio de la siguiente (la notación polifónica queda fuera del alcance de esta versión).
 
-## Verificación
+## Pruebas
 
-El proyecto incluye comprobaciones que se ejecutan en Node (sin navegador):
+```bash
+npm test          # 123 comprobaciones en Node (no hace falta navegador)
+npm run test:types  # comprobación de tipos de src y tests
+```
 
-- `lib/score`: cobertura del compás al 100 %, sin solapes, ligaduras correctas.
-- `lib/durations`: `splitDuration` reconstruye exactamente cualquier duración.
-- `generate`: rangos correctos de cada instrumento, todo dentro de la escala de la tonalidad.
-- `musicxml`: partes, compases, duraciones y percusión sin altura.
-- `transcribe`: sobre melodías sintéticas con vibrato y ruido, detecta el mismo número de notas, las
-  alturas exactas y el tempo; con silencio no inventa notas.
-- `renderScore`: dibuja SVG válido con múltiples pistas y no se rompe con proyectos vacíos.
+Usa `jsdom` y dobles de las APIs de audio, así que se prueba el motor, la transcripción, la notación
+y la interfaz sin abrir un navegador:
+
+- **Duraciones y notación**: `splitDuration` reconstruye exactamente cualquier duración; cada compás
+  queda cubierto al 100 % sin solapes, con ligaduras donde toca.
+- **Teoría**: acordes, grados diatónicos (la séptima del V grado de Do mayor es Fa, no Fa#) y
+  detección de tonalidad.
+- **Generador**: los 6 estilos de acompañamiento, los 5 de bajo y los 8 de batería; todo dentro de la
+  escala y de los registros reales de cada instrumento; mismo resultado con la misma semilla.
+- **Transcripción**: melodías sintéticas con vibrato, armónicos y ruido — veloces, cromáticas, con
+  saltos de octava, registro grave, silbido agudo y a 48 kHz; con silencio no inventa notas.
+- **Partitura**: SVG válido con varias pistas y casos límite (proyecto vacío, sin pistas, ancho
+  insuficiente).
+- **Audio**: render offline con los 13 instrumentos y cabecera WAV correcta (PCM 16 bits estéreo
+  44,1 kHz).
+- **Interfaz**: se monta la aplicación en jsdom y se recorren las cuatro pestañas, se dibuja una nota
+  con el ratón, se arranca el transporte, se genera una canción, se deshace y se rehace y se guardan
+  proyectos.
 
 ---
 

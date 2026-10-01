@@ -204,6 +204,7 @@ export function qualityFromNotes(rootMidi: number, notes: number[]): string {
   if (has(3) && has(6)) return 'dim'
   if (has(4) && has(8)) return 'aug'
   if (has(3) && has(7) && has(11)) return 'min7'
+  if (has(3) && has(7) && has(10)) return 'min7'
   if (has(3) && has(7)) return 'min'
   if (has(4) && has(7) && has(11)) return 'maj7'
   if (has(4) && has(7) && has(10)) return 'dom7'

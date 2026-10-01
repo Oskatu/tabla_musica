@@ -289,65 +289,82 @@ export async function transcribe(
   const minNoteFrames = Math.max(2, Math.round(0.05 / (hop / sampleRate)))
   const maxGapFrames = Math.max(1, Math.round(0.07 / (hop / sampleRate)))
 
-  // 1. Cuantiza cada fotograma con voz al semitono más cercano.
-  const semis: number[] = pitched.map((p) => (p > 0 ? Math.round(p) : 0))
-
-  // 2. Elimina aislados: un fotograma (o dos) distinto entre iguales (mediana 3).
-  for (let i = 1; i < semis.length - 1; i++) {
-    if (semis[i] !== 0 && semis[i - 1] === semis[i + 1] && semis[i - 1] !== semis[i]) {
-      semis[i] = semis[i - 1]
+  /** Inserta en orden (búsqueda binaria) para poder consultar la mediana al vuelo. */
+  const insertSorted = (arr: number[], value: number): void => {
+    let lo = 0
+    let hi = arr.length
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (arr[mid] < value) lo = mid + 1
+      else hi = mid
     }
+    arr.splice(lo, 0, value)
   }
+  const medianOf = (sorted: number[]): number =>
+    sorted.length === 0 ? 0 : sorted.length % 2 === 1 ? sorted[(sorted.length - 1) >> 1] : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2
 
-  // 3. Fusiona tramos consecutivos del mismo semitono (ignorando huecos cortos).
+  /**
+   * Segmenta la pista de altura en notas. Se compara la altura *continua* con
+   * la mediana del segmento en curso (referencia robusta que no se desplaza con
+   * un fotograma suelto): así el vibrato de una misma nota (±1 semitono) no la
+   * parte en trozos y un cambio real de altura (sostenido 2 fotogramas) sí.
+   */
   interface Raw {
-    semitone: number
+    values: number[]
+    sorted: number[]
     startFrame: number
     endFrame: number
-    frames: number[]
   }
   const groups: Raw[] = []
   let current: Raw | null = null
   let gapSince = 0
+  let deviatingFrames = 0
+  const TOLERANCE = 0.8
 
-  for (let i = 0; i < semis.length; i++) {
-    const semi = semis[i]
-    if (semi === 0) {
+  for (let i = 0; i < pitched.length; i++) {
+    const value = pitched[i]
+    if (value <= 0) {
       if (current && gapSince === 0) gapSince = i
       continue
     }
     if (!current) {
-      current = { semitone: semi, startFrame: i, endFrame: i, frames: [i] }
+      current = { values: [value], sorted: [value], startFrame: i, endFrame: i }
       gapSince = 0
+      deviatingFrames = 0
       continue
     }
     const gapFrames = gapSince ? i - gapSince : 0
-    if (semi === current.semitone && gapFrames <= maxGapFrames) {
-      // Continúa la misma nota (aunque haya un hueco breve en medio).
-      current.frames.push(i)
+    const far = Math.abs(value - medianOf(current.sorted)) > TOLERANCE
+    deviatingFrames = far ? deviatingFrames + 1 : 0
+    const sameNote = gapFrames <= maxGapFrames && !(far && deviatingFrames >= 2)
+
+    if (sameNote) {
+      current.values.push(value)
+      insertSorted(current.sorted, value)
       current.endFrame = i
       gapSince = 0
     } else {
       groups.push(current)
-      current = { semitone: semi, startFrame: i, endFrame: i, frames: [i] }
+      current = { values: [value], sorted: [value], startFrame: i, endFrame: i }
       gapSince = 0
+      deviatingFrames = 0
     }
   }
   if (current) groups.push(current)
-  void opts
 
   const notes: DetectedNote[] = []
   for (const g of groups) {
-    if (g.frames.length < minNoteFrames) continue
-    // Altura final: mediana de los fotogramas con voz del tramo.
-    const values = g.frames.map((f) => pitched[f]).filter((v) => v > 0).sort((a, b) => a - b)
-    const meanMidi = values.length ? values[Math.floor(values.length / 2)] : g.semitone
+    const frames = g.endFrame - g.startFrame + 1
+    if (g.values.length < minNoteFrames || frames < minNoteFrames) continue
+    // Altura de la nota: mediana de todas las estimaciones del tramo. La mediana
+    // es robusta frente al vibrato y a los fotogramas de ataque/relajación.
+    const meanMidi = medianOf(g.sorted)
     const rounded = Math.round(meanMidi)
     const startSec = g.startFrame / hopsPerSec
     const endSec = (g.endFrame + 1) / hopsPerSec
     let energySum = 0
     for (let i = g.startFrame; i <= g.endFrame; i++) energySum += energies[i] ?? 0
-    const meanEnergy = energySum / (g.endFrame - g.startFrame + 1)
+    const meanEnergy = energySum / frames
     // Confianza: cuánto se acerca la altura medida al semitono final.
     const deviation = Math.abs(meanMidi - rounded)
     notes.push({
